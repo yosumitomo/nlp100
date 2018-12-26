@@ -796,9 +796,11 @@ ans_39()
 
 def parse_neko_cabocha():
     with open('neko.txt.cabocha', encoding='utf-8') as f:
+    # xml形式で出力された結果を用いる　($ cabocha -f3 neko.txt > neko.txt.cabocha)
         neko_cabocha = f.read()
     neko_cabocha = neko_cabocha.replace('<sentence>\n</sentence>\n', '')
     neko_cabocha = '<document>\n'+neko_cabocha+'</document>'
+    # ネストにしないとコケる
     root = ET.fromstring(neko_cabocha)
     return root
 
@@ -882,7 +884,7 @@ def ans_41():
     [print(f'{"".join([word.surface for word in chunk.morphs])} dst:{chunk.dst}')
     for chunk in sentences[7]]
 
-# ans_41()
+ans_41()
 
 """
 しかも dst:8
@@ -1276,11 +1278,168 @@ Xは | Yを | 見た
 Xで -> 始めて -> Y
 Xで -> 始めて -> 人間という -> Y
 Xという -> Y
+
+（なぜ 「Xという | Yを | 見た」　がないのか？）
+　→　「文節iから構文木の根に至る経路上に文節jが存在する場合」だから
+（Xで -> 始めて -> Y）
+（Xは | Yという -> ものを | 見た）
+Yの付き方が違うのでは？
+
+上記以外で，文節iと文節jから構文木の根に至る経路上で共通の文節kで交わる場合:
+    文節iから文節kに至る直前のパスと文節jから文節kに至る直前までのパス，
+    文節kの内容を"|"で連結して表示
+
+吾輩は | ここで -> 始めて -> 人間という -> ものを | 見た
+吾輩は | 人間という -> ものを | 見た
+吾輩は | ものを | 見た
+ここで -> 始めて -> 人間という
+ここで -> 始めて -> 人間という -> ものを
+人間という -> ものを
+
+
+上記以外で、「吾輩は」と「ここで」から構文木の根に至る経路上で共通の「見た」で交わる場合:
+    「吾輩は」から「見た」に至る直前のパスと「ここで」から「見た」に至る直前までのパス，
+    「見た」の内容を"|"で連結して表示
+
+吾輩は | ここで -> 始めて -> 人間という -> ものを | 見た
+
+
+以降の文節をひとつずつ
+1．名詞句か？
+　　名詞句：パス上判定へ進む　違う：次
+2．パス上か？
+　　パス上：パス出力　違う：共通文節探索、パス出力
+
+「名詞句」：動詞が入ってたら名詞句として扱わない
+
+1．名詞句は二つあるか？
+　　2つある：パス上判定へ進む　違う：次
+2．パス上か？
+　　パス上：パス出力　違う：共通文節探索、パス出力
+
+「名詞句」：動詞が入ってたら名詞句として扱わない
+
 """
+def get_upper_chunk_pos(chunk, chunks, path_list):
+    word = ''.join([morph.surface for morph in chunk.morphs])
+    pos = [morph.pos for morph in chunk.morphs]
+    if chunk.dst == -1:
+        path_list.append({'word': word, 'pos': pos})
+    else:
+        get_upper_chunk(chunks[chunk.dst], chunks, path_list)
+        path_list.append({'word': word, 'pos': pos})
+
+
+def get_crossing(path_list_i, path_list_j):
+    # 交差する文節、path_iにおけるidx, path_jにおけるidx
+    # を返す
+    for i, word_i in enumerate(path_list_i):
+        if word_i in path_list_j:
+            for j, word_j in enumerate(path_list_j):
+                if word_j == word_i:
+                    return word_i, i, j
+
+
+def check_meisiku(chunk):
+    # 「猫である」は名詞句ではない
+    meisi_flg = np.any(['名詞' in morph.pos for morph in chunk.morphs])
+    dousi_flg = np.any(['動詞' in morph.pos for morph in chunk.morphs])
+    return meisi_flg and not dousi_flg
+
+
+def get_XY(chunk, XY):
+    XY_flg = False
+    ret = ''
+    for morph in chunk.morphs:
+        if morph.pos == '名詞' and not XY_flg:
+            ret += XY
+            XY_flg = True
+        else:
+            ret += morph.surface
+    return ret
+
+
 def ans_49():
-    return
+    sentences = create_chunk_list()
+    result = []
+    for k, chunks in enumerate(sentences):
+        for i, chunk_i in enumerate(chunks[:-1]):
+
+            # 残りの部分の名詞句flg
+            meisiku_flg = [check_meisiku(rest_chunk) for rest_chunk in chunks[i:]]
+
+            # 最後の名詞句である or 名詞句でない
+            if np.sum(meisiku_flg) == 1 or not check_meisiku(chunk_i):
+                continue
+
+            # word_i = ''.join([morph.surface for morph in chunk_i.morphs])
+            path_list_i = []
+            get_upper_chunk(chunk_i, chunks, path_list_i)
+            path_list_i = path_list_i[::-1]
+
+            # 一つずつ
+            for chunk_j in chunks[i+1:]:
+                poses_j = [morph.pos for morph in chunk_j.morphs]
+                if '名詞' not in poses_j:
+                    continue
+                word_j = ''.join([morph.surface for morph in chunk_j.morphs])
+                if word_j in path_list_i:
+                    # i -> ... -> j
+                    # ret = word_i
+                    ret = get_XY(chunk_i, 'X')
+                    for x in path_list_i[1:]:
+                        if x != word_j:
+                            ret += ' -> ' + x
+                        else:
+                            ret += ' -> ' + get_XY(chunk_j, 'Y')
+                            break
+                else:
+                    # i -> ... | j -> ... | k
+                    path_list_j = []
+                    get_upper_chunk(chunk_j, chunks, path_list_j)
+                    path_list_j = path_list_j[::-1]
+                    crossing, end_i, end_j = get_crossing(path_list_i, path_list_j)
+                    ret = get_XY(chunk_i, 'X')
+                    if len(path_list_i) > 1:
+                        ret += ' -> '
+                        ret += ' -> '.join(path_list_i[1:end_i])
+                    if end_j != 0:
+                        ret += ' | '
+                        ret += get_XY(chunk_j, 'Y')
+                        if len(path_list_j) >= 2:
+                            ret += ' -> '
+                            ret += ' -> '.join(path_list_j[1:end_j])
+                        ret += ' | '
+                    ret += crossing
+                if ret == 'Yが | つかぬ。':
+                    import pdb; pdb.set_trace()
+                result.append(ret)
+        if k >= 20:
+            break
+    result = '\n'.join(result)
+    print(result)
 
 ans_49()
+
+"""
+　Xで -> 生れたか | Yが ->  | つかぬ。
+Xでも -> 薄暗い -> Yで
+Xでも -> 薄暗い -> 所で | Y ->  | 泣いて
+Xでも -> 薄暗い -> 所で -> 泣いて | Yだけは ->  | 記憶している。
+Xでも -> 薄暗い -> 所で -> 泣いて -> Yしている。
+Xで ->  | Y ->  | 泣いて
+Xで -> 泣いて | Yだけは ->  | 記憶している。
+Xで -> 泣いて -> Yしている。
+X -> 泣いて | Yだけは ->  | 記憶している。
+X -> 泣いて -> Yしている。
+Xは ->  | Yで -> 始めて -> 人間という -> ものを | 見た。
+Xは ->  | Yという -> ものを | 見た。
+Xは ->  | Yを ->  | 見た。
+Xで -> 始めて -> Yという
+Xで -> 始めて -> 人間という -> Yを
+Xという -> Yを
+Xで -> 聞くと | Yは ->  | 種族であったそうだ。
+"""
 
 # %% main
 # if __name__ == '__main__':
