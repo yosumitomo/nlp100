@@ -1435,6 +1435,75 @@ Xという -> Yを
 Xで -> 聞くと | Yは ->  | 種族であったそうだ。
 """
 
+# %% 第6章 英語テキストの処理
+# 英語のテキスト（nlp.txt）に対して，以下の処理を実行せよ．
+
+# %% 50. 文区切り
+# (. or ; or : or ? or !) → 空白文字 → 英大文字というパターンを
+# 文の区切りと見なし，入力された文書を1行1文の形式で出力せよ．
+#
+# 一段落内の一系列の文章に改行を挟む
+
+
+def ans_50():
+    with open('nlp.txt', mode='r') as f:
+        document = f.read()
+    result = re.sub(r'(\.|\;|\:|\?|\!) ([A-Z])', r'\1\n\2', document)
+    # result = re.sub('(\.|\;|\:|\?|\!) ([A-Z])', '\1\n\2', document)
+    # r''のrがないとうまくいかない
+    # あり　.\nMany chall ...
+    # なし　ion<0x01>\n<0x02>any chall ...
+    with open('nlp_50.txt', mode='w') as f:
+        f.write(result)
+
+
+ans_50()
+
+'''
+Natural language processing
+From Wikipedia, the free encyclopedia
+
+Natural language processing (NLP) is a field of computer science, artificial intelligence, and linguistics concerned with the interactions between computers and human (natural) languages.
+As such, NLP is related to the area of humani-computer interaction.
+'''
+# %% 51. 単語の切り出し
+# 空白を単語の区切りとみなし，50の出力を入力として受け取り，1行1単語の形式で出力せよ．
+# ただし，文の終端では空行を出力せよ．
+
+
+def ans_51():
+    with open('nlp_50.txt', mode='r') as f:
+        document = f.read()
+    result = document.replace(' ', '\n') + '\n'
+    with open('nlp_51.txt', mode='w') as f:
+        f.write(result)
+
+
+ans_51()
+
+'''
+Natural
+language
+processing
+From
+Wikipedia,
+the
+free
+encyclopedia
+'''
+
+# %% 52. ステミング
+# 51の出力を入力として受け取り，Porterのステミングアルゴリズムを適用し，
+# 単語と語幹をタブ区切り形式で出力せよ．
+# Pythonでは，Porterのステミングアルゴリズムの実装としてstemmingモジュールを利用するとよい．
+
+
+def ans_52():
+    with open('nlp_51.txt', mode='r') as f:
+        document = f.read()
+
+
+ans_52()
 # %% main
 # if __name__ == '__main__':
     # get_neko_dict()
