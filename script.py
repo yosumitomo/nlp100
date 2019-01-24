@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
 import pydot
 import subprocess
+from stemming.porter import stem
+from copy import deepcopy
 
 # %% 第1章: 準備運動
 
@@ -1496,16 +1498,231 @@ encyclopedia
 # 51の出力を入力として受け取り，Porterのステミングアルゴリズムを適用し，
 # 単語と語幹をタブ区切り形式で出力せよ．
 # Pythonでは，Porterのステミングアルゴリズムの実装としてstemmingモジュールを利用するとよい．
-
+#
+# stemming: 単語の語幹を取り出すこと　派生語の元になる素性を取り出すこと
+# 語幹：runner, ran, runs など　→　run
+#
+# python3対応のためモジュールを一部改良（__name__ 以降をコメントアウト)
+from stemming.porter import stem
 
 def ans_52():
     with open('nlp_51.txt', mode='r') as f:
-        document = f.read()
+        words = f.read()
+    words = words.split('\n')
+    result = '\n'.join([word+'\t'+stem(word) for word in words if len(words) != 0])
 
+    # list(map(lambda x: [x+'\t'+stem(x)], words))
+    print(result[:300])
 
 ans_52()
+"""
+Natural Natur
+language        languag
+processing      process
+From    From
+Wikipedia,      Wikipedia,
+the     the
+free    free
+encyclopedia    encyclopedia
+
+Natural Natur
+language        languag
+processing      process
+(NLP)   (NLP)
+is      is
+a       a
+field   field
+of      of
+computer        comput
+science,        science,
+artificial      artifici
+intelligence,   intelligence,
+"""
+
+
+# %% 53. Tokenization
+# Stanford Core NLPを用い，入力テキストの解析結果をXML形式で得よ．
+# また，このXMLファイルを読み込み，入力テキストを1行1単語の形式で出力せよ．
+#
+# 参考
+# http://lab.astamuse.co.jp/entry/corenlp1
+# 
+# javaのインストール $ sudo apt insatll openjdk-8-jre-headless
+# $  cd ~/stanford-corenlp-full-2018-10-05/
+# $  ./corenlp.sh -file ../nlp.txt
+
+
+def ans_53():
+    tree = ET.parse('nlp.txt.xml')
+    root = tree.getroot()
+    for i, row in enumerate(root.iter()):
+        if row.tag == 'word':
+            print(row.text)
+
+        if i >= 100:
+            break
+
+
+ans_53()
+
+
+"""
+Natural
+language
+processing
+From
+Wikipedia
+,
+the
+free
+encyclopedia
+Natural
+language
+processing
+"""
+
+
+# %% 54. 品詞タグ付け
+# Stanford Core NLPの解析結果XMLを読み込み，
+# 単語，レンマ，品詞をタブ区切り形式で出力せよ．
+def ans_54():
+    tree = ET.parse('nlp.txt.xml')
+    root = tree.getroot()
+    for i, row in enumerate(root.iter()):        
+        if row.tag == 'token':
+            for tag in row.iter():
+                if tag.tag == 'word':
+                    word = tag.text
+                elif tag.tag == 'lemma':
+                    lemma = tag.text
+                elif tag.tag == 'POS':
+                    POS = tag.text
+            print(word+'\t'+lemma+'\t'+POS)
+        if i >= 30:
+            break
+    
+ans_54()
+
+
+"""
+Natural natural JJ
+language        language        NN
+processing      processing      NN
+From    from    IN
+"""
+
+
+# %% 55. 固有表現抽出
+# 入力文中の人名をすべて抜き出せ
+
+def ans_55():
+    tree = ET.parse('nlp.txt.xml')
+    root = tree.getroot()
+    names = []
+    for row in root.iter():
+        if row.tag == 'token':
+            for each in row.iter():
+                if each.tag == 'word':
+                    word = each.text
+                elif each.tag == 'NER' and each.text == 'PERSON':
+                    names.append(word)
+    print(names)
+    
+ans_55()
+
+
+# ['Alan', 'Turing', 'Joseph', 'Weizenbaum', 'MARGIE', 'Schank', 'Wilensky', 'Meehan', 'Lehnert', 'Carbonell', 'Lehnert', 'Racter', 'Jabberwacky', 'Moore']
+
+
+# %% 56. 共参照解析
+# Stanford Core NLPの共参照解析の結果に基づき，
+# 文中の参照表現（mention）を代表参照表現（representative mention）に置換せよ．
+# ただし，置換するときは，「代表参照表現（参照表現）」のように，
+# 元の参照表現が分かるように配慮せよ．
+# 
+# sanford core NLPは文ごとに共参照解析の結果　を出力するらしい
+#
+# 53のコマンドの結果末尾の"coreference"が目的の解析部分
+# 
+# <mention representative="true">　と付いてれば代表参照表現
+# それ以外の場合は参照表現であるとする
+
+# 結果からcoreferenceを抽出
+# coref群の親のcorefを返す
+def get_corefs(root):
+    for row in root.iter():
+        if row.tag == 'document':
+            coref = row.findall('coreference')[0]
+    return coref
+
+
+def get_rep_list(corefs):
+    non_reps = []
+    for row in corefs.iter():
+        if row.tag == 'mention':
+            if 'representative' in row.keys():
+                rep = row.findtext('text')
+            else:
+                non_rep = {}
+                non_rep['id'] = row.findtext('sentence')
+                non_rep['text'] = row.findtext('text')
+                non_rep['rep'] = rep
+                non_reps.append(non_rep)
+    
+    ids = list(map(lambda x: x['id'], non_reps))
+    ids.sort()
+    return non_reps, ids
+
+
+def get_sentences(root):
+    for row in root.iter():
+        if row.tag == 'document':
+            sentences = row.findall('sentences')[0].findall('sentence')
+    return sentences
+
+# %%    
+def insert_rep(sentences, non_reps, non_rep_ids):
+    reult = ''
+    for sentence in sentences:
+        if sentence.attrib['id'] in non_rep_ids:
+            hoge
+        else:
+            maru
+    return result
+
+# %%
+def ans_56():
+    tree = ET.parse('nlp.txt.xml')
+    root = tree.getroot()
+    sentences = get_sentences(root)
+    corefs = get_corefs(root)
+    non_reps, non_rep_ids = get_rep_list(corefs)
+    result = insert_rep(sentences, non_reps, non_rep_ids)
+
+    for row in root.iter():
+        if row.tag == 'token':
+            for each in row.iter():
+                if each.tag == 'word':
+                    word = each.text
+                elif each.tag == 'NER' and each.text == 'PERSON':
+                    names.append(word)
+    print(names)
+    
+ans_56()
+
 # %% main
 # if __name__ == '__main__':
     # get_neko_dict()
     # ans_37()
     # exec("ans_" + str(q).zfill(2) + "()")
+
+
+
+
+
+
+
+
+
+
+
